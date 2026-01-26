@@ -10,8 +10,8 @@ local rootPart = character:WaitForChild("HumanoidRootPart")
 local camera = workspace.CurrentCamera
 
 -- SETTINGS
-local swimSpeed = 20
-local submergeOffset = 6.45
+local swimSpeed = 16
+local submergeOffset = 10
 local riseMultiplier = 1.1
 
 -- STATES
