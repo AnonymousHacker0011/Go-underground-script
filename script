@@ -2,11 +2,8 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
--- PLAYER SETUP
+-- PLAYER
 local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
-local rootPart = character:WaitForChild("HumanoidRootPart")
 local camera = workspace.CurrentCamera
 
 -- SETTINGS
@@ -16,11 +13,17 @@ local riseMultiplier = 1
 
 -- STATES
 local submerged = false
+local animationPlaying = false
 local savedSubmergePosition
 local originalCameraCFrame
-local animationPlaying = false
 
--- Noclip list
+-- CHARACTER REFERENCES (set on spawn)
+local character
+local humanoid
+local rootPart
+local animator
+local animationTrack
+local highlight
 local noclipParts = {}
 
 -- GUI positions
@@ -30,20 +33,11 @@ local playerData = {
 }
 
 -- =========================
--- ANIMATION
--- =========================
-local animation = Instance.new("Animation")
-animation.AnimationId = "rbxassetid://536135263"
-
-local animator = humanoid:WaitForChild("Animator")
-local animationTrack = animator:LoadAnimation(animation)
-animationTrack.Looped = false
-
--- =========================
 -- GUI
 -- =========================
 local gui = Instance.new("ScreenGui")
 gui.Name = "SubmergeGUI"
+gui.ResetOnSpawn = false -- 🔑 IMPORTANT
 gui.Parent = player:WaitForChild("PlayerGui")
 
 local function makeButton(text, position, color)
@@ -82,24 +76,54 @@ local animationButton = makeButton(
 )
 
 -- =========================
--- HIGHLIGHT
+-- CHARACTER SETUP
 -- =========================
-local highlight = Instance.new("Highlight")
-highlight.Enabled = false
-highlight.FillTransparency = 1
-highlight.OutlineTransparency = 0
-highlight.OutlineColor = Color3.new(1,1,1)
-highlight.Parent = character
+local function setupCharacter(char)
+	character = char
+	humanoid = character:WaitForChild("Humanoid")
+	rootPart = character:WaitForChild("HumanoidRootPart")
 
--- =========================
--- Noclip setup
--- =========================
-for _, part in ipairs(character:GetDescendants()) do
-	if part:IsA("BasePart") then
-		table.insert(noclipParts, part)
+	-- Animator
+	animator = humanoid:WaitForChild("Animator")
+
+	-- Animation
+	local animation = Instance.new("Animation")
+	animation.AnimationId = "rbxassetid://536135263"
+	animationTrack = animator:LoadAnimation(animation)
+	animationTrack.Looped = false
+
+	-- Highlight
+	if highlight then highlight:Destroy() end
+	highlight = Instance.new("Highlight")
+	highlight.Enabled = false
+	highlight.FillTransparency = 1
+	highlight.OutlineTransparency = 0
+	highlight.OutlineColor = Color3.new(1,1,1)
+	highlight.Parent = character
+
+	-- Noclip parts
+	table.clear(noclipParts)
+	for _, part in ipairs(character:GetDescendants()) do
+		if part:IsA("BasePart") then
+			table.insert(noclipParts, part)
+		end
 	end
+
+	-- Reset states
+	submerged = false
+	animationPlaying = false
+	submergeButton.Text = "Submerge"
+	animationButton.Text = "Arm up: On/Off"
 end
 
+player.CharacterAdded:Connect(setupCharacter)
+if player.Character then
+	setupCharacter(player.Character)
+end
+
+-- =========================
+-- HELPERS
+-- =========================
 local function toggleNoclip(state)
 	for _, part in ipairs(noclipParts) do
 		part.CanCollide = not state
@@ -118,7 +142,6 @@ local function submerge()
 	highlight.Enabled = true
 	submerged = true
 
-	-- Face UP
 	rootPart.CFrame =
 		CFrame.new(savedSubmergePosition)
 		* CFrame.Angles(math.pi / 2, 0, 0)
@@ -144,6 +167,8 @@ end
 -- ANIMATION TOGGLE
 -- =========================
 local function toggleAnimation()
+	if not animationTrack then return end
+
 	if animationPlaying then
 		animationPlaying = false
 		animationTrack:Stop()
@@ -166,7 +191,7 @@ end
 -- MAIN LOOP
 -- =========================
 RunService.RenderStepped:Connect(function()
-	if submerged then
+	if submerged and rootPart and humanoid then
 		toggleNoclip(true)
 
 		rootPart.CFrame =
@@ -202,10 +227,4 @@ end)
 
 animationButton:GetPropertyChangedSignal("Position"):Connect(function()
 	playerData.animationButtonPosition = animationButton.Position
-end)
-
-player.CharacterAdded:Connect(function()
-	task.wait(0.05)
-	submergeButton.Position = playerData.buttonPosition
-	animationButton.Position = playerData.animationButtonPosition
 end)
