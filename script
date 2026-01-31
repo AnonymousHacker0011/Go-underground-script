@@ -11,7 +11,7 @@ local camera = workspace.CurrentCamera
 
 -- SETTINGS
 local swimSpeed = 25
-local submergeOffset = 8
+local submergeOffset = 7.5
 local riseMultiplier = 1
 
 -- STATES
