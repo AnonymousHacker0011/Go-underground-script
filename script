@@ -1,96 +1,100 @@
+--==================================================
 -- SERVICES
+--==================================================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
+--==================================================
 -- PLAYER
+--==================================================
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
+--==================================================
 -- SETTINGS
+--==================================================
 local swimSpeed = 24
 local submergeOffset = 50
 local riseMultiplier = 1
+local toggleKey = Enum.KeyCode.Q
 
--- STATES
+--==================================================
+-- STATE
+--==================================================
+local enabled = false        -- 🔑 MASTER TOGGLE (persists through death)
 local submerged = false
-local animationPlaying = false
 local savedSubmergePosition
 local originalCameraCFrame
 
--- CHARACTER REFERENCES (set on spawn)
+--==================================================
+-- CHARACTER REFERENCES
+--==================================================
 local character
 local humanoid
 local rootPart
-local animator
-local animationTrack
 local highlight
 local noclipParts = {}
 
--- GUI positions
-local playerData = {
-	buttonPosition = UDim2.new(1, -175, 0.5, -100),
-	animationButtonPosition = UDim2.new(1, -175, 0.5, -40)
-}
-
--- =========================
--- GUI
--- =========================
-local gui = Instance.new("ScreenGui")
-gui.Name = "SubmergeGUI"
-gui.ResetOnSpawn = false -- 🔑 IMPORTANT
-gui.Parent = player:WaitForChild("PlayerGui")
-
-local function makeButton(text, position, color)
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(0,150,0,50)
-	btn.Position = position
-	btn.AnchorPoint = Vector2.new(1,0.5)
-	btn.BackgroundColor3 = color
-	btn.BackgroundTransparency = 0.2
-	btn.TextColor3 = Color3.new(1,1,1)
-	btn.TextStrokeTransparency = 0
-	btn.Font = Enum.Font.GothamBold
-	btn.TextSize = 18
-	btn.Text = text
-	btn.BorderSizePixel = 0
-	btn.Draggable = true
-	btn.Parent = gui
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0,15)
-	corner.Parent = btn
-
-	return btn
+--==================================================
+-- HELPERS
+--==================================================
+local function toggleNoclip(state)
+	for _, part in ipairs(noclipParts) do
+		part.CanCollide = not state
+	end
 end
 
-local submergeButton = makeButton(
-	"Submerge",
-	playerData.buttonPosition,
-	Color3.fromRGB(0,100,200)
-)
+--==================================================
+-- SUBMERGE / SURFACE
+--==================================================
+local function submerge()
+	if submerged or not enabled then return end
 
-local animationButton = makeButton(
-	"Arm up: On/Off",
-	playerData.animationButtonPosition,
-	Color3.fromRGB(0,200,100)
-)
+	originalCameraCFrame = camera.CFrame
+	savedSubmergePosition = rootPart.Position - Vector3.new(0, submergeOffset, 0)
 
--- =========================
+	submerged = true
+	humanoid.PlatformStand = true
+	highlight.Enabled = true
+	toggleNoclip(true)
+
+	rootPart.CFrame =
+		CFrame.new(savedSubmergePosition)
+		* CFrame.Angles(math.pi / 2, 0, 0)
+end
+
+local function surface()
+	if not submerged then return end
+
+	submerged = false
+	humanoid.PlatformStand = false
+	highlight.Enabled = false
+	toggleNoclip(false)
+
+	rootPart.CFrame =
+		CFrame.new(rootPart.Position + Vector3.new(0, submergeOffset * riseMultiplier, 0))
+
+	camera.CFrame = originalCameraCFrame
+end
+
+local function toggleSubmerge()
+	enabled = not enabled
+
+	if enabled then
+		submerge()
+	else
+		surface()
+	end
+end
+
+--==================================================
 -- CHARACTER SETUP
--- =========================
+--==================================================
 local function setupCharacter(char)
 	character = char
 	humanoid = character:WaitForChild("Humanoid")
 	rootPart = character:WaitForChild("HumanoidRootPart")
-
-	-- Animator
-	animator = humanoid:WaitForChild("Animator")
-
-	-- Animation
-	local animation = Instance.new("Animation")
-	animation.AnimationId = "rbxassetid://536135263"
-	animationTrack = animator:LoadAnimation(animation)
-	animationTrack.Looped = false
 
 	-- Highlight
 	if highlight then highlight:Destroy() end
@@ -101,7 +105,7 @@ local function setupCharacter(char)
 	highlight.OutlineColor = Color3.new(1,1,1)
 	highlight.Parent = character
 
-	-- Noclip parts
+	-- Cache noclip parts
 	table.clear(noclipParts)
 	for _, part in ipairs(character:GetDescendants()) do
 		if part:IsA("BasePart") then
@@ -109,11 +113,18 @@ local function setupCharacter(char)
 		end
 	end
 
-	-- Reset states
 	submerged = false
-	animationPlaying = false
-	submergeButton.Text = "Submerge"
-	animationButton.Text = "Arm up: On/Off"
+
+	-- 🔁 RE-APPLY AFTER RESPAWN
+	task.wait(0.1)
+	if enabled then
+		submerge()
+	end
+
+	-- Cleanup on death (but keep enabled state)
+	humanoid.Died:Connect(function()
+		submerged = false
+	end)
 end
 
 player.CharacterAdded:Connect(setupCharacter)
@@ -121,75 +132,9 @@ if player.Character then
 	setupCharacter(player.Character)
 end
 
--- =========================
--- HELPERS
--- =========================
-local function toggleNoclip(state)
-	for _, part in ipairs(noclipParts) do
-		part.CanCollide = not state
-	end
-end
-
--- =========================
--- SUBMERGE / SURFACE
--- =========================
-local function submerge()
-	originalCameraCFrame = camera.CFrame
-	savedSubmergePosition = rootPart.Position - Vector3.new(0, submergeOffset, 0)
-
-	toggleNoclip(true)
-	humanoid.PlatformStand = true
-	highlight.Enabled = true
-	submerged = true
-
-	rootPart.CFrame =
-		CFrame.new(savedSubmergePosition)
-		* CFrame.Angles(math.pi / 2, 0, 0)
-
-	submergeButton.Text = "Rise Up"
-end
-
-local function surface()
-	submerged = false
-
-	toggleNoclip(false)
-	humanoid.PlatformStand = false
-	highlight.Enabled = false
-
-	rootPart.CFrame =
-		CFrame.new(rootPart.Position + Vector3.new(0, submergeOffset * riseMultiplier, 0))
-
-	camera.CFrame = originalCameraCFrame
-	submergeButton.Text = "Submerge"
-end
-
--- =========================
--- ANIMATION TOGGLE
--- =========================
-local function toggleAnimation()
-	if not animationTrack then return end
-
-	if animationPlaying then
-		animationPlaying = false
-		animationTrack:Stop()
-		animationButton.Text = "Arm up: On/Off"
-	else
-		animationPlaying = true
-		animationButton.Text = "Arm up: Off"
-
-		task.spawn(function()
-			while animationPlaying do
-				animationTrack:Play()
-				animationTrack.TimePosition = 0.2
-				task.wait(0.03)
-			end
-		end)
-	end
-end
-
--- =========================
+--==================================================
 -- MAIN LOOP
--- =========================
+--==================================================
 RunService.RenderStepped:Connect(function()
 	if submerged and rootPart and humanoid then
 		toggleNoclip(true)
@@ -205,26 +150,12 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
--- =========================
--- BUTTON EVENTS
--- =========================
-submergeButton.MouseButton1Click:Connect(function()
-	if submerged then
-		surface()
-	else
-		submerge()
+--==================================================
+-- INPUT (Q TO TOGGLE)
+--==================================================
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == toggleKey then
+		toggleSubmerge()
 	end
-end)
-
-animationButton.MouseButton1Click:Connect(toggleAnimation)
-
--- =========================
--- SAVE GUI POSITION
--- =========================
-submergeButton:GetPropertyChangedSignal("Position"):Connect(function()
-	playerData.buttonPosition = submergeButton.Position
-end)
-
-animationButton:GetPropertyChangedSignal("Position"):Connect(function()
-	playerData.animationButtonPosition = animationButton.Position
 end)
