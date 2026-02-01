@@ -7,8 +7,8 @@ local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
 -- SETTINGS
-local swimSpeed = 25
-local submergeOffset = 7.5
+local swimSpeed = 24
+local submergeOffset = 50
 local riseMultiplier = 1
 
 -- STATES
