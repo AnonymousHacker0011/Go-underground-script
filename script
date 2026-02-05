@@ -15,7 +15,7 @@ local camera = workspace.CurrentCamera
 -- SETTINGS
 --==================================================
 local swimSpeed = 24
-local submergeOffset = 110
+local submergeOffset = 119
 local riseMultiplier = 1
 local toggleKey = Enum.KeyCode.Q
 
