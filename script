@@ -15,18 +15,21 @@ local camera = workspace.CurrentCamera
 -- SETTINGS
 --==================================================
 local swimSpeed = 24
-local submergeOffset = 119
+local submergeOffset = 0 -- Default value for GUI
 local riseMultiplier = 1
 local toggleKey = Enum.KeyCode.Q
 
 --==================================================
 -- STATE
 --==================================================
-local enabled = false        -- 🔑 MASTER TOGGLE (persists through death)
+local enabled = false
 local submerged = false
 local savedSubmergePosition
 local originalCameraCFrame
-local lastDeathPosition
+
+-- Memory to persist through death
+local lastSubmergePosition = nil
+local lastEnabledState = false
 
 --==================================================
 -- CHARACTER REFERENCES
@@ -50,29 +53,36 @@ end
 -- SUBMERGE / SURFACE
 --==================================================
 local function submerge()
-	if submerged or not enabled or not rootPart then return end
+	if submerged or not enabled then return end
 
 	originalCameraCFrame = camera.CFrame
-	savedSubmergePosition = rootPart.Position - Vector3.new(0, submergeOffset, 0)
+	if not savedSubmergePosition then
+		savedSubmergePosition = rootPart.Position - Vector3.new(0, submergeOffset, 0)
+	end
 
 	submerged = true
 	humanoid.PlatformStand = true
-	if highlight then highlight.Enabled = true end
+	highlight.Enabled = true
 	toggleNoclip(true)
 
-	rootPart.CFrame = CFrame.new(savedSubmergePosition) * CFrame.Angles(math.pi / 2, 0, 0)
+	rootPart.CFrame =
+		CFrame.new(savedSubmergePosition)
+		* CFrame.Angles(math.pi / 2, 0, 0)
 end
 
 local function surface()
-	if not submerged or not rootPart then return end
+	if not submerged then return end
 
 	submerged = false
 	humanoid.PlatformStand = false
-	if highlight then highlight.Enabled = false end
+	highlight.Enabled = false
 	toggleNoclip(false)
 
-	rootPart.CFrame = rootPart.CFrame + Vector3.new(0, submergeOffset * riseMultiplier, 0)
+	rootPart.CFrame =
+		CFrame.new(rootPart.Position + Vector3.new(0, submergeOffset * riseMultiplier, 0))
+
 	camera.CFrame = originalCameraCFrame
+	savedSubmergePosition = nil
 end
 
 local function toggleSubmerge()
@@ -81,6 +91,9 @@ local function toggleSubmerge()
 		submerge()
 	else
 		surface()
+		-- If disabled, clear memory so respawn is normal
+		lastSubmergePosition = nil
+		lastEnabledState = false
 	end
 end
 
@@ -109,38 +122,30 @@ local function setupCharacter(char)
 		end
 	end
 
+	-- Restore previous submerge state
 	submerged = false
+	savedSubmergePosition = lastSubmergePosition
+	enabled = lastEnabledState
 
-	-- 🔁 RE-APPLY SUBMERGE AFTER RESPAWN
-	task.wait(0.1)
-	if enabled then
+	if enabled and savedSubmergePosition then
 		submerge()
 	end
 
 	-- Handle death
 	humanoid.Died:Connect(function()
-		submerged = false
-		if enabled and rootPart then
-			lastDeathPosition = rootPart.Position -- store death position only if submerge was active
+		-- Save state before death only if submerge is enabled
+		if enabled then
+			lastSubmergePosition = savedSubmergePosition
+			lastEnabledState = enabled
 		else
-			lastDeathPosition = nil
+			-- Clear memory if disabled
+			lastSubmergePosition = nil
+			lastEnabledState = false
 		end
 	end)
 end
 
---==================================================
--- RESPAWN AT LAST DEATH POSITION (ONLY IF SUBMERGE ENABLED)
---==================================================
-player.CharacterAdded:Connect(function(char)
-	setupCharacter(char)
-
-	-- Wait for root part to exist
-	local hrp = char:WaitForChild("HumanoidRootPart")
-	if enabled and lastDeathPosition then
-		hrp.CFrame = CFrame.new(lastDeathPosition)
-	end
-end)
-
+player.CharacterAdded:Connect(setupCharacter)
 if player.Character then
 	setupCharacter(player.Character)
 end
@@ -149,15 +154,14 @@ end
 -- MAIN LOOP
 --==================================================
 RunService.RenderStepped:Connect(function()
-	if submerged and rootPart and humanoid then
+	if submerged and rootPart and humanoid and savedSubmergePosition then
 		toggleNoclip(true)
-
-		rootPart.CFrame = CFrame.new(
-			rootPart.Position.X,
-			savedSubmergePosition.Y,
-			rootPart.Position.Z
-		) * CFrame.Angles(math.pi / 2, 0, 0)
-
+		rootPart.CFrame =
+			CFrame.new(
+				rootPart.Position.X,
+				savedSubmergePosition.Y,
+				rootPart.Position.Z
+			) * CFrame.Angles(math.pi / 2, 0, 0)
 		rootPart.Velocity = humanoid.MoveDirection * swimSpeed
 	end
 end)
@@ -169,5 +173,99 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	if input.KeyCode == toggleKey then
 		toggleSubmerge()
+	end
+end)
+
+--==================================================
+-- GUI FOR CUSTOM SUBMERGE VALUE (MOVABLE)
+--==================================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SubmergeGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = player:WaitForChild("PlayerGui")
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 220, 0, 120)
+Frame.Position = UDim2.new(0.5, -110, 0.5, -60)
+Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Frame.BorderSizePixel = 0
+Frame.Parent = ScreenGui
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.BackgroundTransparency = 1
+Title.Text = "Submerge Offset"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextScaled = true
+Title.Parent = Frame
+
+local TextBox = Instance.new("TextBox")
+TextBox.Size = UDim2.new(0.8, 0, 0, 30)
+TextBox.Position = UDim2.new(0.1, 0, 0.35, 0)
+TextBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+TextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+TextBox.TextScaled = true
+TextBox.Text = "0"
+TextBox.ClearTextOnFocus = false
+TextBox.Parent = Frame
+
+-- Clear the textbox when clicked
+TextBox.Focused:Connect(function()
+	TextBox.Text = ""
+end)
+
+local Button = Instance.new("TextButton")
+Button.Size = UDim2.new(0.8, 0, 0, 30)
+Button.Position = UDim2.new(0.1, 0, 0.7, 0)
+Button.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+Button.TextScaled = true
+Button.Text = "Apply"
+Button.Parent = Frame
+
+Button.MouseButton1Click:Connect(function()
+	local newValue = tonumber(TextBox.Text)
+	if newValue then
+		submergeOffset = newValue
+		print("Submerge offset set to:", submergeOffset)
+	else
+		print("Invalid value! Please enter a number.")
+	end
+end)
+
+--==================================================
+-- MAKE GUI MOVABLE
+--==================================================
+local dragging = false
+local dragInput, dragStart, startPos
+
+Frame.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+		dragStart = input.Position
+		startPos = Frame.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+Frame.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement then
+		dragInput = input
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		local delta = input.Position - dragStart
+		Frame.Position = UDim2.new(
+			startPos.X.Scale,
+			startPos.X.Offset + delta.X,
+			startPos.Y.Scale,
+			startPos.Y.Offset + delta.Y
+		)
 	end
 end)
