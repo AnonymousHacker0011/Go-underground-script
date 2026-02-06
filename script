@@ -12,17 +12,17 @@ local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
 --==================================================
--- SETTINGS
+-- SETTINGS (NO DEFAULT SUBMERGE VALUE)
 --==================================================
 local swimSpeed = 24
-local submergeOffset = 119
+local submergeOffset = nil -- GUI ONLY
 local riseMultiplier = 1
 local toggleKey = Enum.KeyCode.Q
 
 --==================================================
 -- STATE
 --==================================================
-local enabled = false        -- 🔑 MASTER TOGGLE (persists through death)
+local enabled = false
 local submerged = false
 local savedSubmergePosition
 local originalCameraCFrame
@@ -37,6 +37,73 @@ local highlight
 local noclipParts = {}
 
 --==================================================
+-- GUI
+--==================================================
+local gui = Instance.new("ScreenGui")
+gui.Name = "SubmergeGui"
+gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.fromOffset(180, 90)
+frame.Position = UDim2.fromScale(0.02, 0.4)
+frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+frame.Parent = gui
+
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 25)
+title.BackgroundTransparency = 1
+title.Text = "Submerge Depth"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+title.Parent = frame
+
+local box = Instance.new("TextBox")
+box.Size = UDim2.fromOffset(140, 25)
+box.Position = UDim2.fromOffset(20, 32)
+box.PlaceholderText = "Enter depth"
+box.Text = ""
+box.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+box.TextColor3 = Color3.new(1, 1, 1)
+box.Font = Enum.Font.Gotham
+box.TextSize = 14
+box.ClearTextOnFocus = false
+box.Parent = frame
+
+Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
+
+local apply = Instance.new("TextButton")
+apply.Size = UDim2.fromOffset(140, 22)
+apply.Position = UDim2.fromOffset(20, 62)
+apply.Text = "Apply"
+apply.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+apply.TextColor3 = Color3.new(1, 1, 1)
+apply.Font = Enum.Font.GothamBold
+apply.TextSize = 13
+apply.Parent = frame
+
+Instance.new("UICorner", apply).CornerRadius = UDim.new(0, 6)
+
+apply.MouseButton1Click:Connect(function()
+	local value = tonumber(box.Text)
+	if value and value > 0 then
+		submergeOffset = math.abs(value)
+		box.Text = ""
+		box.PlaceholderText = tostring(submergeOffset)
+
+		if submerged and rootPart then
+			savedSubmergePosition = rootPart.Position - Vector3.new(0, submergeOffset, 0)
+		end
+	end
+end)
+
+--==================================================
 -- HELPERS
 --==================================================
 local function toggleNoclip(state)
@@ -49,7 +116,7 @@ end
 -- SUBMERGE / SURFACE
 --==================================================
 local function submerge()
-	if submerged or not enabled then return end
+	if submerged or not enabled or not submergeOffset then return end
 
 	originalCameraCFrame = camera.CFrame
 	savedSubmergePosition = rootPart.Position - Vector3.new(0, submergeOffset, 0)
@@ -80,7 +147,6 @@ end
 
 local function toggleSubmerge()
 	enabled = not enabled
-
 	if enabled then
 		submerge()
 	else
@@ -96,16 +162,14 @@ local function setupCharacter(char)
 	humanoid = character:WaitForChild("Humanoid")
 	rootPart = character:WaitForChild("HumanoidRootPart")
 
-	-- Highlight
 	if highlight then highlight:Destroy() end
 	highlight = Instance.new("Highlight")
 	highlight.Enabled = false
 	highlight.FillTransparency = 1
 	highlight.OutlineTransparency = 0
-	highlight.OutlineColor = Color3.new(1,1,1)
+	highlight.OutlineColor = Color3.new(1, 1, 1)
 	highlight.Parent = character
 
-	-- Cache noclip parts
 	table.clear(noclipParts)
 	for _, part in ipairs(character:GetDescendants()) do
 		if part:IsA("BasePart") then
@@ -114,14 +178,11 @@ local function setupCharacter(char)
 	end
 
 	submerged = false
-
-	-- 🔁 RE-APPLY AFTER RESPAWN
 	task.wait(0.1)
 	if enabled then
 		submerge()
 	end
 
-	-- Cleanup on death (but keep enabled state)
 	humanoid.Died:Connect(function()
 		submerged = false
 	end)
@@ -151,10 +212,10 @@ RunService.RenderStepped:Connect(function()
 end)
 
 --==================================================
--- INPUT (Q TO TOGGLE)
+-- INPUT
 --==================================================
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp then return end
 	if input.KeyCode == toggleKey then
 		toggleSubmerge()
 	end
